@@ -2,15 +2,15 @@ import { removeBackground } from '@imgly/background-removal';
 import './style.css';
 import { traceCenterlines } from './trace.js';
 const app=document.querySelector('#app');
-app.innerHTML=`<main class="shell"><header><div class="mark">✦</div><div><div class="eyebrow">CREATIVE TOOLS</div><h1>Outline Studio</h1><p>Turn a photo into a crisp, transparent black-line PNG.</p></div></header><div class="layout"><section class="panel"><div class="sectionTitle">01 / Upload a photo</div><label class="drop" id="drop"><input id="file" type="file" accept="image/*"><span class="uploadIcon">↥</span><b>Choose an image</b><small>Tap or drop a JPG, PNG, or WebP</small></label><div id="fileName" class="muted">No image selected</div><div class="actions"><button id="cut" class="primary" disabled>✦ Remove background & outline</button><button id="art" class="secondary" disabled>✎ Clean Artwork (recommended for cartoons)</button><button id="maskPreview" class="subtle" disabled>View background removal result</button></div><div class="status" id="status" role="status" aria-live="polite">Images are processed on your device. The first background removal loads an AI model and may take a little longer.</div><hr><div class="sectionTitle">02 / Fine tune</div><label class="setting">Detail level <output id="detailValue">28</output><input id="detail" type="range" min="5" max="90" value="28"></label><label class="setting">Faint line recovery <output id="recoveryValue">0</output><input id="recovery" type="range" min="0" max="100" value="0"></label><label class="setting">Line thickness <output id="thickValue">1</output><input id="thick" type="range" min="1" max="5" value="1"></label><label class="setting">Edge contrast <output id="contrastValue">45</output><input id="contrast" type="range" min="10" max="130" value="45"></label><label class="check"><input id="silhouette" type="checkbox" checked>Include subject's outer silhouette</label><label class="check"><input id="white" type="checkbox">Preview on white instead of checkerboard</label><button id="download" class="secondary" disabled>↓ Download transparent PNG</button><button id="vector" class="secondary" disabled>✧ Clean Vector Outline (SVG)</button><button id="svgDownload" class="secondary" disabled>↓ Download smooth SVG</button><button id="reset" class="subtle" disabled>Start over</button></section><section class="panel previewPanel"><div class="sectionTitle">03 / Preview</div><div class="tabs"><button class="tab active" id="resultTab">Outline</button><button class="tab" id="originalTab">Original</button></div><div class="canvasWrap" id="canvasWrap"><div id="empty">Your outline will appear here.<span>Black lines · Transparent background</span></div><canvas id="canvas" hidden></canvas><img id="original" alt="Uploaded original" hidden></div><p class="tip">Tip: For laser engraving, start with thin lines and increase the detail level only if important features are missing. Busy photos may need manual cleanup.</p></section></div><footer>Preserves the source image's geometry. No generative redrawing. Made for creative work, tracing and LaserGRBL.</footer></main>`;
+app.innerHTML=`<main class="shell"><header><div class="mark">✦</div><div><div class="eyebrow">CREATIVE TOOLS</div><h1>Outline Studio</h1><p>Turn a photo into a crisp, transparent black-line PNG.</p></div></header><div class="layout"><section class="panel"><div class="sectionTitle">01 / Upload a photo</div><label class="drop" id="drop"><input id="file" type="file" accept="image/*"><span class="uploadIcon">↥</span><b>Choose an image</b><small>Tap or drop a JPG, PNG, or WebP</small></label><div id="fileName" class="muted">No image selected</div><div class="actions"><button id="cut" class="primary" disabled>✦ Remove background & outline</button><button id="art" class="secondary" disabled>✎ Clean Artwork (recommended for cartoons)</button><button id="burn" class="primary" disabled>🔥 Woodburning artwork (preserve details)</button><button id="maskPreview" class="subtle" disabled>View background removal result</button></div><div class="status" id="status" role="status" aria-live="polite">Images are processed on your device. The first background removal loads an AI model and may take a little longer.</div><hr><div class="sectionTitle">02 / Fine tune</div><label class="setting">Detail level <output id="detailValue">28</output><input id="detail" type="range" min="5" max="90" value="28"></label><label class="setting">Faint line recovery <output id="recoveryValue">0</output><input id="recovery" type="range" min="0" max="100" value="0"></label><label class="setting">Line thickness <output id="thickValue">1</output><input id="thick" type="range" min="1" max="5" value="1"></label><label class="setting">Edge contrast <output id="contrastValue">45</output><input id="contrast" type="range" min="10" max="130" value="45"></label><label class="check"><input id="silhouette" type="checkbox" checked>Include subject's outer silhouette</label><label class="check"><input id="white" type="checkbox">Preview on white instead of checkerboard</label><button id="download" class="secondary" disabled>↓ Download transparent PNG</button><button id="vector" class="secondary" disabled>✧ Clean Vector Outline (SVG)</button><button id="svgDownload" class="secondary" disabled>↓ Download smooth SVG</button><button id="reset" class="subtle" disabled>Start over</button></section><section class="panel previewPanel"><div class="sectionTitle">03 / Preview</div><div class="tabs"><button class="tab active" id="resultTab">Outline</button><button class="tab" id="originalTab">Original</button></div><div class="canvasWrap" id="canvasWrap"><div id="empty">Your outline will appear here.<span>Black lines · Transparent background</span></div><canvas id="canvas" hidden></canvas><img id="original" alt="Uploaded original" hidden></div><p class="tip">Tip: For laser engraving, start with thin lines and increase the detail level only if important features are missing. Busy photos may need manual cleanup.</p></section></div><footer>Preserves the source image's geometry. No generative redrawing. Made for creative work, tracing and LaserGRBL.</footer></main>`;
 const $=id=>document.getElementById(id);
-let inputFile=null,cutout=null,viewing='result',busy=false,vectorMode=false,vectorSVG='',artMode=false,removedFor=null,maskMode=false;
+let inputFile=null,cutout=null,viewing='result',busy=false,vectorMode=false,vectorSVG='',artMode=false,removedFor=null,maskMode=false,burnMode=false;
 const canvas=$('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
 function status(msg,error=false){$('status').textContent=msg;$('status').classList.toggle('error',error)}
-function updateButtons(){$('cut').disabled=!inputFile||busy;$('art').disabled=!inputFile||busy;$('maskPreview').disabled=!cutout||busy;$('download').disabled=!cutout||busy;$('vector').disabled=!cutout||busy;$('svgDownload').disabled=!vectorSVG||busy;$('reset').disabled=!inputFile||busy}
+function updateButtons(){$('cut').disabled=!inputFile||busy;$('art').disabled=!inputFile||busy;$('burn').disabled=!inputFile||busy;$('maskPreview').disabled=!cutout||busy;$('download').disabled=!cutout||busy;$('vector').disabled=!cutout||busy;$('svgDownload').disabled=!vectorSVG||busy;$('reset').disabled=!inputFile||busy}
 function showTab(tab){viewing=tab;$('resultTab').classList.toggle('active',tab==='result');$('originalTab').classList.toggle('active',tab==='original');$('original').hidden=tab!=='original'||!inputFile;canvas.hidden=tab!=='result'||!cutout;$('empty').hidden=(tab==='original'&&!!inputFile)||(tab==='result'&&!!cutout)}
 let originalUrl=null;
-function loadImage(file){if(!file||!file.type.startsWith('image/'))return status('Please choose an image file.',true);if(file.size>25*1024*1024)return status('Please select an image smaller than 25 MB.',true);inputFile=file;cutout=null;removedFor=null;artMode=false;maskMode=false;vectorSVG='';if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=URL.createObjectURL(file);const im=new Image();im.onload=()=>{$('original').src=originalUrl;$('fileName').textContent=file.name;status('Ready! Tap “Remove background & outline”.');updateButtons();showTab('original')};im.onerror=()=>status('Could not open that image.',true);im.src=originalUrl}
+function loadImage(file){if(!file||!file.type.startsWith('image/'))return status('Please choose an image file.',true);if(file.size>25*1024*1024)return status('Please select an image smaller than 25 MB.',true);inputFile=file;cutout=null;removedFor=null;artMode=false;maskMode=false;burnMode=false;vectorSVG='';if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=URL.createObjectURL(file);const im=new Image();im.onload=()=>{$('original').src=originalUrl;$('fileName').textContent=file.name;status('Ready! Tap “Remove background & outline”.');updateButtons();showTab('original')};im.onerror=()=>status('Could not open that image.',true);im.src=originalUrl}
 $('file').addEventListener('change',e=>loadImage(e.target.files[0]));const drop=$('drop');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});drop.addEventListener('dragleave',()=>drop.classList.remove('over'));drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');loadImage(e.dataTransfer.files[0])});
 async function ensureBackgroundRemoved(){
  if(cutout&&removedFor===inputFile)return cutout;
@@ -24,12 +24,52 @@ async function ensureBackgroundRemoved(){
 $('cut').addEventListener('click',async()=>{
  if(!inputFile||busy)return;
  busy=true;updateButtons();
- try{await ensureBackgroundRemoved();artMode=false;maskMode=false;render();showTab('result');status('Background removed. Outline extracted from isolated subject.')}
+ try{await ensureBackgroundRemoved();artMode=false;maskMode=false;burnMode=false;render();showTab('result');status('Background removed. Outline extracted from isolated subject.')}
  catch(e){console.error(e);status('Background removal failed. Check your connection and retry.',true)}
  finally{busy=false;updateButtons()}
 });
 
 $('maskPreview').addEventListener('click',()=>{if(!cutout)return;maskMode=!maskMode;$('maskPreview').textContent=maskMode?'Return to line preview':'View background removal result';render();showTab('result');status(maskMode?'Viewing the isolated subject BEFORE tracing. If details are missing here, the background-removal model removed them.':'Returned to outline preview.');});
+
+function renderBurn(){
+ if(!inputFile||!cutout||removedFor!==inputFile)return;
+ vectorSVG='';vectorMode=false;maskMode=false;artMode=false;
+ $('vector').textContent='✧ Clean Vector Outline (SVG)';
+ const original=$('original'),foreground=cutout;
+ const max=2500,scale=Math.min(1.4,max/Math.max(original.naturalWidth,original.naturalHeight));
+ const w=Math.max(1,Math.round(original.naturalWidth*scale)),h=Math.max(1,Math.round(original.naturalHeight*scale)),n=w*h;
+ const a=document.createElement('canvas'),b=document.createElement('canvas');a.width=b.width=w;a.height=b.height=h;
+ const ac=a.getContext('2d',{willReadFrequently:true}),bc=b.getContext('2d',{willReadFrequently:true});
+ ac.imageSmoothingEnabled=bc.imageSmoothingEnabled=true;
+ ac.drawImage(original,0,0,w,h);bc.drawImage(foreground,0,0,w,h);
+ const orig=ac.getImageData(0,0,w,h).data,fg=bc.getImageData(0,0,w,h).data;
+ const gray=new Uint8Array(n),safe=new Uint8Array(n),ink=new Uint8Array(n);
+ for(let i=0;i<n;i++){const p=i*4;gray[i]=Math.round(orig[p]*.2126+orig[p+1]*.7152+orig[p+2]*.0722);safe[i]=fg[p+3]>=150?1:0}
+ // Do not exclude real linework at translucent mask fringes, but do exclude background.
+ for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(safe[i])continue;if(fg[i*4+3]>=65&&(safe[i-1]||safe[i+1]||safe[i-w]||safe[i+w]))safe[i]=1}
+ const detail=+$('detail').value,contrast=+$('contrast').value;
+ const threshold=Math.max(80,Math.min(230,183+(detail-28)*.45-(contrast-45)*.3));
+ // Retain black fills (eyes/wing markings) and all ink inside the isolated subject.
+ for(let i=0;i<n;i++)if(safe[i]&&gray[i]<threshold)ink[i]=1;
+ // Reconnect only one-pixel fractures, including diagonal ones.
+ const joined=new Uint8Array(ink);
+ for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(!safe[i]||ink[i])continue;
+  if((ink[i-1]&&ink[i+1])||(ink[i-w]&&ink[i+w])||(ink[i-w-1]&&ink[i+w+1])||(ink[i-w+1]&&ink[i+w-1]))joined[i]=1;
+ }
+ const hi=document.createElement('canvas');hi.width=w;hi.height=h;
+ const hc=hi.getContext('2d'),data=hc.createImageData(w,h);
+ for(let i=0;i<n;i++)if(joined[i])data.data[i*4+3]=255;
+ hc.putImageData(data,0,0);
+ canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(hi,0,0);
+ updateButtons();
+}
+$('burn').addEventListener('click',async()=>{
+ if(!inputFile||busy)return;busy=true;updateButtons();
+ try{await ensureBackgroundRemoved();burnMode=true;renderBurn();showTab('result');status('Woodburning mode: preserves original dark details inside the isolated subject. Check the result before engraving.')}
+ catch(e){console.error(e);status('Could not remove background for woodburning mode.',true)}
+ finally{busy=false;updateButtons()}
+});
+
 function renderArt(){
  if(!inputFile||!cutout||removedFor!==inputFile)return;
  vectorSVG='';vectorMode=false;maskMode=false;
@@ -88,13 +128,13 @@ $('art').addEventListener('click',async()=>{
  busy=true;updateButtons();
  try{
   await ensureBackgroundRemoved();
-  artMode=true;maskMode=false;renderArt();showTab('result');
+  artMode=true;maskMode=false;burnMode=false;renderArt();showTab('result');
   status('Step 2 of 2 complete: background removed first, then clean artwork lines extracted from the subject. Try SVG tracing next.');
  }catch(e){console.error(e);status('Could not remove the background. No unmasked outline was generated.',true)}
  finally{busy=false;updateButtons()}
 });
 
-function render(){if(maskMode&&cutout){canvas.width=cutout.naturalWidth;canvas.height=cutout.naturalHeight;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(cutout,0,0);return}if(artMode){renderArt();return}vectorSVG='';vectorMode=false;$('vector').textContent='✧ Clean Vector Outline (SVG)';updateButtons();
+function render(){if(burnMode){renderBurn();return}if(maskMode&&cutout){canvas.width=cutout.naturalWidth;canvas.height=cutout.naturalHeight;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(cutout,0,0);return}if(artMode){renderArt();return}vectorSVG='';vectorMode=false;$('vector').textContent='✧ Clean Vector Outline (SVG)';updateButtons();
 if(!cutout)return;
 const max=2800,scale=Math.min(1.65,max/Math.max(cutout.naturalWidth,cutout.naturalHeight));
 const w=Math.max(1,Math.round(cutout.naturalWidth*scale)),h=Math.max(1,Math.round(cutout.naturalHeight*scale)),n=w*h;
@@ -261,4 +301,4 @@ $('svgDownload').addEventListener('click',()=>{
  if(!vectorSVG||!inputFile)return;
  downloadFile(new Blob([vectorSVG],{type:'image/svg+xml'}),inputFile.name.replace(/\.[^.]+$/,'')+'-smooth-outline.svg');
 });
-for(const id of ['detail','recovery','thick','contrast'])$(id).addEventListener('input',()=>{$(id+'Value').value=$(id).value;render()});$('silhouette').addEventListener('change',render);$('white').addEventListener('change',()=>{$('canvasWrap').classList.toggle('white',$('white').checked)});$('resultTab').addEventListener('click',()=>showTab('result'));$('originalTab').addEventListener('click',()=>showTab('original'));$('download').addEventListener('click',()=>{if(!cutout)return;canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(inputFile.name.replace(/\.[^.]+$/,'')||'image')+'-outline.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)},'image/png')});$('reset').addEventListener('click',()=>{inputFile=null;cutout=null;removedFor=null;vectorSVG='';vectorMode=false;artMode=false;maskMode=false;$('file').value='';$('fileName').textContent='No image selected';$('original').removeAttribute('src');if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=null;status('Choose another image to get started.');updateButtons();showTab('result')});updateButtons();
+for(const id of ['detail','recovery','thick','contrast'])$(id).addEventListener('input',()=>{$(id+'Value').value=$(id).value;render()});$('silhouette').addEventListener('change',render);$('white').addEventListener('change',()=>{$('canvasWrap').classList.toggle('white',$('white').checked)});$('resultTab').addEventListener('click',()=>showTab('result'));$('originalTab').addEventListener('click',()=>showTab('original'));$('download').addEventListener('click',()=>{if(!cutout)return;canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(inputFile.name.replace(/\.[^.]+$/,'')||'image')+'-outline.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)},'image/png')});$('reset').addEventListener('click',()=>{inputFile=null;cutout=null;removedFor=null;vectorSVG='';vectorMode=false;artMode=false;maskMode=false;burnMode=false;$('file').value='';$('fileName').textContent='No image selected';$('original').removeAttribute('src');if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=null;status('Choose another image to get started.');updateButtons();showTab('result')});updateButtons();
