@@ -12,6 +12,51 @@ let originalUrl=null;
 function loadImage(file){if(!file||!file.type.startsWith('image/'))return status('Please choose an image file.',true);if(file.size>25*1024*1024)return status('Please select an image smaller than 25 MB.',true);inputFile=file;cutout=null;if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=URL.createObjectURL(file);const im=new Image();im.onload=()=>{$('original').src=originalUrl;$('fileName').textContent=file.name;status('Ready! Tap “Remove background & outline”.');updateButtons();showTab('original')};im.onerror=()=>status('Could not open that image.',true);im.src=originalUrl}
 $('file').addEventListener('change',e=>loadImage(e.target.files[0]));const drop=$('drop');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});drop.addEventListener('dragleave',()=>drop.classList.remove('over'));drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');loadImage(e.dataTransfer.files[0])});
 $('cut').addEventListener('click',async()=>{if(!inputFile||busy)return;busy=true;updateButtons();status('Removing the background… The first run downloads the processing model (internet required).');try{const blob=await removeBackground(inputFile,{progress:(key,current,total)=>{if(total>0)status('Preparing background removal… '+Math.round(current/total*100)+'%')}});const url=URL.createObjectURL(blob);const im=new Image();await new Promise((resolve,reject)=>{im.onload=resolve;im.onerror=reject;im.src=url});cutout=im;render();showTab('result');status('Done! Adjust the sliders, then save your transparent PNG.');URL.revokeObjectURL(url)}catch(e){console.error(e);status('Background removal failed. Check your connection, then try again. Large mobile photos may exhaust device memory.',true)}finally{busy=false;updateButtons()}});
-function render(){if(!cutout)return;const max=2200,scale=Math.min(1,max/Math.max(cutout.naturalWidth,cutout.naturalHeight));const w=Math.max(1,Math.round(cutout.naturalWidth*scale)),h=Math.max(1,Math.round(cutout.naturalHeight*scale));canvas.width=w;canvas.height=h;const temp=document.createElement('canvas');temp.width=w;temp.height=h;const t=temp.getContext('2d',{willReadFrequently:true});t.drawImage(cutout,0,0,w,h);const rgba=t.getImageData(0,0,w,h).data;const gray=new Float32Array(w*h),alpha=new Uint8Array(w*h);for(let i=0;i<w*h;i++){let p=i*4;alpha[i]=rgba[p+3];gray[i]=rgba[p]*.299+rgba[p+1]*.587+rgba[p+2]*.114}const out=ctx.createImageData(w,h),data=out.data;let detail=+$('detail').value,contrast=+$('contrast').value,threshold=Math.max(10,125-detail*1.12)*contrast/45,thick=+$('thick').value,sil=$('silhouette').checked;const map=new Uint8Array(w*h);for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){let i=y*w+x;if(alpha[i]<125)continue;const a=gray[i-w-1],b=gray[i-w],c=gray[i-w+1],d=gray[i-1],f=gray[i+1],g=gray[i+w-1],j=gray[i+w],k=gray[i+w+1];const gx=-a+c-2*d+2*f-g+k,gy=-a-2*b-c+g+2*j+k;const edge=Math.hypot(gx,gy)>threshold;const border=sil&&(alpha[i-1]<125||alpha[i+1]<125||alpha[i-w]<125||alpha[i+w]<125);if(edge||border)map[i]=1}
-const radius=thick-1;for(let y=0;y<h;y++)for(let x=0;x<w;x++){let i=y*w+x;if(!map[i])continue;for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){if(dx*dx+dy*dy>radius*radius)continue;let nx=x+dx,ny=y+dy;if(nx<0||nx>=w||ny<0||ny>=h)continue;let p=(ny*w+nx)*4;data[p]=data[p+1]=data[p+2]=0;data[p+3]=255}}ctx.putImageData(out,0,0)}
+function render(){
+if(!cutout)return;
+const max=3000,scale=Math.min(1,max/Math.max(cutout.naturalWidth,cutout.naturalHeight));
+const w=Math.max(1,Math.round(cutout.naturalWidth*scale)),h=Math.max(1,Math.round(cutout.naturalHeight*scale)),n=w*h;
+canvas.width=w;canvas.height=h;
+const source=document.createElement('canvas');source.width=w;source.height=h;
+const c=source.getContext('2d',{willReadFrequently:true});c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';c.drawImage(cutout,0,0,w,h);
+const rgba=c.getImageData(0,0,w,h).data;
+const lum=new Float32Array(n),alpha=new Uint8Array(n);
+for(let i=0;i<n;i++){const p=i*4;alpha[i]=rgba[p+3];lum[i]=.2126*rgba[p]+.7152*rgba[p+1]+.0722*rgba[p+2]}
+// A separable five-tap Gaussian removes single-pixel noise without blurring character features.
+const kernel=[1,4,6,4,1],tmp=new Float32Array(n),smooth=new Float32Array(n);
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){let sum=0;for(let k=-2;k<=2;k++)sum+=lum[y*w+Math.max(0,Math.min(w-1,x+k))]*kernel[k+2];tmp[y*w+x]=sum/16}
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){let sum=0;for(let k=-2;k<=2;k++)sum+=tmp[Math.max(0,Math.min(h-1,y+k))*w+x]*kernel[k+2];smooth[y*w+x]=sum/16}
+// Sobel gradient + non-maximum suppression produces single-pixel ridges.
+const mag=new Float32Array(n),direction=new Uint8Array(n);
+for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;
+if(alpha[i]<110)continue;
+const a=smooth[i-w-1],b=smooth[i-w],d=smooth[i-w+1],e=smooth[i-1],g=smooth[i+1],j=smooth[i+w-1],k=smooth[i+w],l=smooth[i+w+1];
+const gx=-a+d-2*e+2*g-j+l,gy=-a-2*b-d+j+2*k+l;
+mag[i]=Math.hypot(gx,gy);
+let ang=(Math.atan2(gy,gx)*180/Math.PI+180)%180;
+direction[i]=ang<22.5||ang>=157.5?0:ang<67.5?1:ang<112.5?2:3;
+}
+const detail=+$('detail').value,contrast=+$('contrast').value;
+const high=Math.max(22,145-detail*1.12)*(contrast/45),low=high*.46;
+const strong=new Uint8Array(n),weak=new Uint8Array(n),edge=new Uint8Array(n);
+for(let y=2;y<h-2;y++)for(let x=2;x<w-2;x++){const i=y*w+x;if(alpha[i]<125||mag[i]<low)continue;
+const offsets=direction[i]===0?[1,-1]:direction[i]===1?[w-1,-w+1]:direction[i]===2?[w,-w]:[w+1,-w-1];
+if(mag[i]<mag[i+offsets[0]]||mag[i]<mag[i+offsets[1]])continue;
+if(mag[i]>=high)strong[i]=1;else weak[i]=1;
+}
+// Link faint edge pixels only when connected to reliable high-contrast lines.
+const stack=[];for(let i=0;i<n;i++)if(strong[i]){edge[i]=1;stack.push(i)}
+while(stack.length){const i=stack.pop(),x=i%w,y=(i/w)|0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=x+dx,ny=y+dy;if(nx<1||ny<1||nx>=w-1||ny>=h-1)continue;const j=ny*w+nx;if(weak[j]&&!edge[j]){edge[j]=1;stack.push(j)}}}
+if($('silhouette').checked){for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(alpha[i]>=145&&(alpha[i-1]<145||alpha[i+1]<145||alpha[i-w]<145||alpha[i+w]<145))edge[i]=1}}
+// Subtle alpha feathering smooths the 1-pixel stair steps without thick black blocks.
+const thick=+$('thick').value,rad=thick-1,output=ctx.createImageData(w,h),pixels=output.data;
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(!edge[i])continue;
+for(let dy=-rad;dy<=rad;dy++)for(let dx=-rad;dx<=rad;dx++){if(dx*dx+dy*dy>rad*rad)continue;let nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;pixels[(ny*w+nx)*4+3]=255}
+}
+if(thick===1){const base=pixels.slice();for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x,p=i*4;if(base[p+3])continue;
+const sides=(base[(i-1)*4+3]>0?1:0)+(base[(i+1)*4+3]>0?1:0)+(base[(i-w)*4+3]>0?1:0)+(base[(i+w)*4+3]>0?1:0);
+if(sides>=2)pixels[p+3]=55;
+}}
+ctx.putImageData(output,0,0);
+}
 for(const id of ['detail','thick','contrast'])$(id).addEventListener('input',()=>{$(id+'Value').value=$(id).value;render()});$('silhouette').addEventListener('change',render);$('white').addEventListener('change',()=>{$('canvasWrap').classList.toggle('white',$('white').checked)});$('resultTab').addEventListener('click',()=>showTab('result'));$('originalTab').addEventListener('click',()=>showTab('original'));$('download').addEventListener('click',()=>{if(!cutout)return;canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(inputFile.name.replace(/\.[^.]+$/,'')||'image')+'-outline.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)},'image/png')});$('reset').addEventListener('click',()=>{inputFile=null;cutout=null;$('file').value='';$('fileName').textContent='No image selected';$('original').removeAttribute('src');if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=null;status('Choose another image to get started.');updateButtons();showTab('result')});updateButtons();
