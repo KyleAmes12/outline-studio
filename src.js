@@ -35,37 +35,39 @@ function renderBurn(){
  if(!inputFile||!cutout||removedFor!==inputFile)return;
  vectorSVG='';vectorMode=false;maskMode=false;artMode=false;
  $('vector').textContent='✧ Clean Vector Outline (SVG)';
- const original=$('original'),foreground=cutout;
- const max=2500,scale=Math.min(1.4,max/Math.max(original.naturalWidth,original.naturalHeight));
- const w=Math.max(1,Math.round(original.naturalWidth*scale)),h=Math.max(1,Math.round(original.naturalHeight*scale)),n=w*h;
- const a=document.createElement('canvas'),b=document.createElement('canvas');a.width=b.width=w;a.height=b.height=h;
- const ac=a.getContext('2d',{willReadFrequently:true}),bc=b.getContext('2d',{willReadFrequently:true});
- ac.imageSmoothingEnabled=bc.imageSmoothingEnabled=true;
- ac.drawImage(original,0,0,w,h);bc.drawImage(foreground,0,0,w,h);
- const orig=ac.getImageData(0,0,w,h).data,fg=bc.getImageData(0,0,w,h).data;
- const gray=new Uint8Array(n),safe=new Uint8Array(n),ink=new Uint8Array(n);
- for(let i=0;i<n;i++){const p=i*4;gray[i]=Math.round(orig[p]*.2126+orig[p+1]*.7152+orig[p+2]*.0722);safe[i]=fg[p+3]>=150?1:0}
- // Do not exclude real linework at translucent mask fringes, but do exclude background.
- for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(safe[i])continue;if(fg[i*4+3]>=65&&(safe[i-1]||safe[i+1]||safe[i-w]||safe[i+w]))safe[i]=1}
+ const image=cutout,max=2000,scale=Math.min(1.2,max/Math.max(image.naturalWidth,image.naturalHeight));
+ const w=Math.max(2,Math.round(image.naturalWidth*scale)),h=Math.max(2,Math.round(image.naturalHeight*scale)),n=w*h;
+ const c=document.createElement('canvas');c.width=w;c.height=h;
+ const t=c.getContext('2d',{willReadFrequently:true});t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';t.drawImage(image,0,0,w,h);
+ const rgba=t.getImageData(0,0,w,h).data,gray=new Uint8Array(n),inside=new Uint8Array(n),ink=new Uint8Array(n);
+ for(let i=0;i<n;i++){const p=i*4;inside[i]=rgba[p+3]>=215?1:0;gray[i]=Math.round(.2126*rgba[p]+.7152*rgba[p+1]+.0722*rgba[p+2])}
+ // Restrict detection to the segmented foreground, including a narrow silhouette.
  const detail=+$('detail').value,contrast=+$('contrast').value;
- const threshold=Math.max(80,Math.min(230,183+(detail-28)*.45-(contrast-45)*.3));
- // Retain black fills (eyes/wing markings) and all ink inside the isolated subject.
- for(let i=0;i<n;i++)if(safe[i]&&gray[i]<threshold)ink[i]=1;
- // Reconnect only one-pixel fractures, including diagonal ones.
- const joined=new Uint8Array(ink);
- for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(!safe[i]||ink[i])continue;
-  if((ink[i-1]&&ink[i+1])||(ink[i-w]&&ink[i+w])||(ink[i-w-1]&&ink[i+w+1])||(ink[i-w+1]&&ink[i+w-1]))joined[i]=1;
+ const threshold=Math.max(65,Math.min(210,135+(detail-28)*.48-(contrast-45)*.35));
+ for(let i=0;i<n;i++)if(inside[i]&&gray[i]<threshold)ink[i]=1;
+ // Calculate distance from a white pixel; keep narrow ink strokes, not broad fills.
+ const dist=new Uint16Array(n);for(let i=0;i<n;i++)dist[i]=ink[i]?30000:0;
+ for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(ink[i])dist[i]=Math.min(dist[i],dist[i-1]+1,dist[i-w]+1,dist[i-w-1]+2)}
+ for(let y=h-2;y>=1;y--)for(let x=w-2;x>=1;x--){const i=y*w+x;if(ink[i])dist[i]=Math.min(dist[i],dist[i+1]+1,dist[i+w]+1,dist[i+w+1]+2)}
+ // Draw a smooth single contour along broad fills; preserve ink where strokes are narrow.
+ const strokeMax=Math.max(2,Math.round(Math.min(w,h)*.0045)),lines=new Uint8Array(n);
+ for(let i=0;i<n;i++)if(ink[i]&&dist[i]<=strokeMax)lines[i]=1;
+ // Recover the outer silhouette directly from alpha, independent of black fills.
+ if($('silhouette').checked)for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(inside[i]&&(!inside[i-1]||!inside[i+1]||!inside[i-w]||!inside[i+w]))lines[i]=1}
+ const closed=new Uint8Array(lines);
+ for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(!inside[i]||lines[i])continue;
+  if((lines[i-1]&&lines[i+1])||(lines[i-w]&&lines[i+w])||(lines[i-w-1]&&lines[i+w+1])||(lines[i-w+1]&&lines[i+w-1]))closed[i]=1;
  }
- const hi=document.createElement('canvas');hi.width=w;hi.height=h;
- const hc=hi.getContext('2d'),data=hc.createImageData(w,h);
- for(let i=0;i<n;i++)if(joined[i])data.data[i*4+3]=255;
- hc.putImageData(data,0,0);
- canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(hi,0,0);
+ // One pixel edges are antialiased by drawing at source resolution then downsampling.
+ const out=document.createElement('canvas');out.width=w;out.height=h;const oc=out.getContext('2d'),data=oc.createImageData(w,h);
+ for(let i=0;i<n;i++)if(closed[i])data.data[i*4+3]=255;
+ oc.putImageData(data,0,0);
+ canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(out,0,0);
  updateButtons();
 }
 $('burn').addEventListener('click',async()=>{
  if(!inputFile||busy)return;busy=true;updateButtons();
- try{await ensureBackgroundRemoved();burnMode=true;renderBurn();showTab('result');status('Woodburning mode: preserves original dark details inside the isolated subject. Check the result before engraving.')}
+ try{await ensureBackgroundRemoved();burnMode=true;renderBurn();showTab('result');status('Woodburning mode: thin outlines extracted; large dark fills suppressed. Inspect carefully: some filled details may be simplified.')}
  catch(e){console.error(e);status('Could not remove background for woodburning mode.',true)}
  finally{busy=false;updateButtons()}
 });
