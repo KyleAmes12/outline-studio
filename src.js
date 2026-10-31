@@ -1,306 +1,106 @@
 import { removeBackground } from '@imgly/background-removal';
-import './style.css';
 import { traceCenterlines } from './trace.js';
-const app=document.querySelector('#app');
-app.innerHTML=`<main class="shell"><header><div class="mark">✦</div><div><div class="eyebrow">CREATIVE TOOLS</div><h1>Outline Studio</h1><p>Turn a photo into a crisp, transparent black-line PNG.</p></div></header><div class="layout"><section class="panel"><div class="sectionTitle">01 / Upload a photo</div><label class="drop" id="drop"><input id="file" type="file" accept="image/*"><span class="uploadIcon">↥</span><b>Choose an image</b><small>Tap or drop a JPG, PNG, or WebP</small></label><div id="fileName" class="muted">No image selected</div><div class="actions"><button id="cut" class="primary" disabled>✦ Remove background & outline</button><button id="art" class="secondary" disabled>✎ Clean Artwork (recommended for cartoons)</button><button id="burn" class="primary" disabled>🔥 Woodburning artwork (preserve details)</button><button id="maskPreview" class="subtle" disabled>View background removal result</button></div><div class="status" id="status" role="status" aria-live="polite">Images are processed on your device. The first background removal loads an AI model and may take a little longer.</div><hr><div class="sectionTitle">02 / Fine tune</div><label class="setting">Detail level <output id="detailValue">28</output><input id="detail" type="range" min="5" max="90" value="28"></label><label class="setting">Faint line recovery <output id="recoveryValue">0</output><input id="recovery" type="range" min="0" max="100" value="0"></label><label class="setting">Line thickness <output id="thickValue">1</output><input id="thick" type="range" min="1" max="5" value="1"></label><label class="setting">Edge contrast <output id="contrastValue">45</output><input id="contrast" type="range" min="10" max="130" value="45"></label><label class="check"><input id="silhouette" type="checkbox" checked>Include subject's outer silhouette</label><label class="check"><input id="white" type="checkbox">Preview on white instead of checkerboard</label><button id="download" class="secondary" disabled>↓ Download transparent PNG</button><button id="vector" class="secondary" disabled>✧ Clean Vector Outline (SVG)</button><button id="svgDownload" class="secondary" disabled>↓ Download smooth SVG</button><button id="reset" class="subtle" disabled>Start over</button></section><section class="panel previewPanel"><div class="sectionTitle">03 / Preview</div><div class="tabs"><button class="tab active" id="resultTab">Outline</button><button class="tab" id="originalTab">Original</button></div><div class="canvasWrap" id="canvasWrap"><div id="empty">Your outline will appear here.<span>Black lines · Transparent background</span></div><canvas id="canvas" hidden></canvas><img id="original" alt="Uploaded original" hidden></div><p class="tip">Tip: For laser engraving, start with thin lines and increase the detail level only if important features are missing. Busy photos may need manual cleanup.</p></section></div><footer>Preserves the source image's geometry. No generative redrawing. Made for creative work, tracing and LaserGRBL.</footer></main>`;
+import './style.css';
+
+document.querySelector('#app').innerHTML = `
+<main class="shell"><header><div class="mark">✦</div><div><div class="eyebrow">LASER PREP STUDIO</div><h1>Outline Studio</h1><p>Preserve the drawing. Remove only the background. Prepare clean engraving artwork.</p></div></header>
+<div class="layout">
+<section class="panel">
+<div class="sectionTitle">01 / IMAGE</div>
+<label class="drop" id="drop"><input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/gif"><span class="uploadIcon">↥</span><b>Choose image</b><small>Tap here or drop a PNG, JPG or WebP</small></label>
+<div class="muted" id="filename">No image selected</div>
+<div class="sectionTitle">02 / BACKGROUND REMOVAL</div>
+<p class="tip">For illustrations with a plain background, use Artwork (recommended). For busy photographic backgrounds, use AI.</p>
+<div class="tabs"><button class="tab active" id="plainMode">Artwork</button><button class="tab" id="aiMode">Photograph / AI</button></div>
+<label class="setting">Background tolerance <output id="toleranceValue">35</output><input type="range" id="tolerance" min="5" max="110" value="35"></label>
+<button class="primary" id="process" disabled>1. Remove background & prepare lines</button>
+<div class="status" id="status" role="status" aria-live="polite">Choose an image. Artwork mode removes the outside background without deleting enclosed white character details.</div>
+<hr>
+<div class="sectionTitle">03 / CLEANUP</div>
+<p class="tip">Need to fix the selection? Paint directly over the preview. Restore brings parts back; Erase removes leftovers. This edits the background mask before tracing.</p>
+<div class="tabs"><button class="tab active" id="inspectTool">Inspect</button><button class="tab" id="restoreTool">Restore</button><button class="tab" id="eraseTool">Erase</button></div>
+<label class="setting">Brush size <output id="brushValue">25</output><input type="range" id="brush" min="3" max="90" value="25"></label>
+<div class="tabs"><button class="tab" id="maskTab">Subject mask</button><button class="tab active" id="outlineTab">Outline</button></div>
+<label class="setting">Ink sensitivity <output id="inkValue">150</output><input type="range" id="ink" min="45" max="225" value="150"></label>
+<label class="setting">Line thickness <output id="thickValue">1</output><input type="range" id="thick" min="1" max="4" value="1"></label>
+<label class="check"><input type="checkbox" id="fills" checked>Keep black fills (eyes and intentional shaded areas)</label>
+<label class="check"><input type="checkbox" id="white">Preview on white</label>
+<div class="tabs"><button id="undo" class="tab" disabled>Undo brush</button><button id="redo" class="tab" disabled>Redo</button></div>
+<button class="secondary" id="png" disabled>Download engraving PNG (transparent)</button>
+<button class="secondary" id="svg" disabled>Download centerline SVG (experimental)</button>
+<button class="subtle" id="reset">Start over</button>
+</section>
+<section class="panel"><div class="sectionTitle">04 / PREVIEW</div>
+<div class="tabs"><button class="tab" id="originalTab">Original</button><button class="tab active" id="resultTab">Processed</button></div>
+<div class="canvasWrap" id="wrap"><div id="empty">Your artwork will appear here.</div><canvas id="canvas" hidden></canvas><img id="original" alt="Original uploaded artwork" hidden></div>
+<p class="tip" id="dimensions">The canvas stays transparent. A checkerboard means there is no ink there.</p>
+<p class="tip">For woodburning, inspect the design at its actual size and do a test burn on scrap wood. The engraving PNG is the safer export for LaserGRBL; SVG centerline reconstruction can simplify complex features.</p>
+</section></div><footer>Outline Studio · Background-first editing · No generative redrawing</footer></main>`;
+
 const $=id=>document.getElementById(id);
-let inputFile=null,cutout=null,viewing='result',busy=false,vectorMode=false,vectorSVG='',artMode=false,removedFor=null,maskMode=false,burnMode=false;
 const canvas=$('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+let file=null,url=null,original=null,mode='art',tab='result',stage='outline',tool='inspect',busy=false;
+let W=0,H=0,source=null,mask=null,output=null,history=[],redo=[],drawing=false,started=false;
+const cap=2200;
 function status(msg,error=false){$('status').textContent=msg;$('status').classList.toggle('error',error)}
-function updateButtons(){$('cut').disabled=!inputFile||busy;$('art').disabled=!inputFile||busy;$('burn').disabled=!inputFile||busy;$('maskPreview').disabled=!cutout||busy;$('download').disabled=!cutout||busy;$('vector').disabled=!cutout||busy;$('svgDownload').disabled=!vectorSVG||busy;$('reset').disabled=!inputFile||busy}
-function showTab(tab){viewing=tab;$('resultTab').classList.toggle('active',tab==='result');$('originalTab').classList.toggle('active',tab==='original');$('original').hidden=tab!=='original'||!inputFile;canvas.hidden=tab!=='result'||!cutout;$('empty').hidden=(tab==='original'&&!!inputFile)||(tab==='result'&&!!cutout)}
-let originalUrl=null;
-function loadImage(file){if(!file||!file.type.startsWith('image/'))return status('Please choose an image file.',true);if(file.size>25*1024*1024)return status('Please select an image smaller than 25 MB.',true);inputFile=file;cutout=null;removedFor=null;artMode=false;maskMode=false;burnMode=false;vectorSVG='';if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=URL.createObjectURL(file);const im=new Image();im.onload=()=>{$('original').src=originalUrl;$('fileName').textContent=file.name;status('Ready! Tap “Remove background & outline”.');updateButtons();showTab('original')};im.onerror=()=>status('Could not open that image.',true);im.src=originalUrl}
-$('file').addEventListener('change',e=>loadImage(e.target.files[0]));const drop=$('drop');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});drop.addEventListener('dragleave',()=>drop.classList.remove('over'));drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');loadImage(e.dataTransfer.files[0])});
-async function ensureBackgroundRemoved(){
- if(cutout&&removedFor===inputFile)return cutout;
- status('Step 1 of 2: Removing background from the subject…');
- const blob=await removeBackground(inputFile,{progress:(key,current,total)=>{if(total>0)status('Removing background… '+Math.round(current/total*100)+'%')}});
- const url=URL.createObjectURL(blob),im=new Image();
- try{await new Promise((ok,fail)=>{im.onload=ok;im.onerror=fail;im.src=url})}
- finally{URL.revokeObjectURL(url)}
- cutout=im;removedFor=inputFile;return im;
+function controls(){for(const id of ['process'])$(id).disabled=!file||busy;for(const id of ['png','svg'])$(id).disabled=!output||busy;$('undo').disabled=!history.length;$('redo').disabled=!redo.length}
+function switchTab(v){tab=v;$('originalTab').classList.toggle('active',v==='original');$('resultTab').classList.toggle('active',v==='result');$('original').hidden=v!=='original'||!file;canvas.hidden=v!=='result'||!output;$('empty').hidden=!!file;show()}
+function load(f){if(!f||!f.type.startsWith('image/'))return status('Choose an image file.',true);if(f.size>25e6)return status('Use an image under 25 MB.',true);if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);file=f;mask=null;output=null;history=[];redo=[];started=false;const im=new Image();im.onload=()=>{original=im;$('original').src=url;$('filename').textContent=f.name;switchTab('original');status('Image loaded. Choose Artwork or Photograph/AI, then process.');controls()};im.onerror=()=>status('Could not read this image.',true);im.src=url}
+$('file').onchange=e=>load(e.target.files[0]);$('drop').ondragover=e=>{e.preventDefault();$('drop').classList.add('over')};$('drop').ondragleave=()=>$('drop').classList.remove('over');$('drop').ondrop=e=>{e.preventDefault();$('drop').classList.remove('over');load(e.dataTransfer.files[0])};
+function setMode(m){mode=m;$('plainMode').classList.toggle('active',m==='art');$('aiMode').classList.toggle('active',m==='ai');status(m==='art'?'Artwork mode: removes contiguous background at the edges and keeps enclosed shapes.':'AI mode: segments the main subject. Inspect and restore areas the model misses.')}
+$('plainMode').onclick=()=>setMode('art');$('aiMode').onclick=()=>setMode('ai');
+for(const id of ['tolerance','brush','ink','thick'])$(id).oninput=()=>{$(id+'Value').textContent=$(id).value;if(id==='tolerance'&&started&&mode==='art'&&!history.length){runArtworkMask();extract();show()}else if((id==='ink'||id==='thick')&&mask){extract();show()}};
+function prep(image){const scale=Math.min(1,cap/Math.max(image.naturalWidth,image.naturalHeight));W=Math.max(2,Math.round(image.naturalWidth*scale));H=Math.max(2,Math.round(image.naturalHeight*scale));const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d',{willReadFrequently:true});g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(image,0,0,W,H);return g.getImageData(0,0,W,H).data}
+function runArtworkMask(){
+ const n=W*H,rgba=source,tol=+$('tolerance').value;
+ // Flood from borders only. Enclosed white regions survive, unlike global keying.
+ const bg=new Uint8Array(n),queue=new Int32Array(n);let head=0,tail=0;
+ function borderSample(){const samples=[];const stride=Math.max(1,Math.floor(Math.min(W,H)/30));for(let x=0;x<W;x+=stride){samples.push(x,(H-1)*W+x)}for(let y=0;y<H;y+=stride){samples.push(y*W,y*W+W-1)}
+ const rs=[],gs=[],bs=[];for(const i of samples){const p=i*4;rs.push(rgba[p]);gs.push(rgba[p+1]);bs.push(rgba[p+2])}const median=a=>{a.sort((x,y)=>x-y);return a[(a.length/2)|0]};return[median(rs),median(gs),median(bs)]}
+ const [R,G,B]=borderSample();const t2=tol*tol*3;
+ function eligible(i){const p=i*4;const dr=rgba[p]-R,dg=rgba[p+1]-G,db=rgba[p+2]-B;return rgba[p+3]<30||dr*dr+dg*dg+db*db<t2}
+ function push(i){if(bg[i]||!eligible(i))return;bg[i]=1;queue[tail++]=i}
+ for(let x=0;x<W;x++){push(x);push((H-1)*W+x)}
+ for(let y=0;y<H;y++){push(y*W);push(y*W+W-1)}
+ while(head<tail){const i=queue[head++],x=i%W,y=(i/W)|0;if(x>0)push(i-1);if(x<W-1)push(i+1);if(y>0)push(i-W);if(y<H-1)push(i+W)}
+ mask=new Uint8Array(n);for(let i=0;i<n;i++)mask[i]=bg[i]?0:source[i*4+3];
 }
-$('cut').addEventListener('click',async()=>{
- if(!inputFile||busy)return;
- busy=true;updateButtons();
- try{await ensureBackgroundRemoved();artMode=false;maskMode=false;burnMode=false;render();showTab('result');status('Background removed. Outline extracted from isolated subject.')}
- catch(e){console.error(e);status('Background removal failed. Check your connection and retry.',true)}
- finally{busy=false;updateButtons()}
-});
-
-$('maskPreview').addEventListener('click',()=>{if(!cutout)return;maskMode=!maskMode;$('maskPreview').textContent=maskMode?'Return to line preview':'View background removal result';render();showTab('result');status(maskMode?'Viewing the isolated subject BEFORE tracing. If details are missing here, the background-removal model removed them.':'Returned to outline preview.');});
-
-function renderBurn(){
- if(!inputFile||!cutout||removedFor!==inputFile)return;
- vectorSVG='';vectorMode=false;maskMode=false;artMode=false;
- $('vector').textContent='✧ Clean Vector Outline (SVG)';
- const image=cutout,max=2000,scale=Math.min(1.2,max/Math.max(image.naturalWidth,image.naturalHeight));
- const w=Math.max(2,Math.round(image.naturalWidth*scale)),h=Math.max(2,Math.round(image.naturalHeight*scale)),n=w*h;
- const c=document.createElement('canvas');c.width=w;c.height=h;
- const t=c.getContext('2d',{willReadFrequently:true});t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';t.drawImage(image,0,0,w,h);
- const rgba=t.getImageData(0,0,w,h).data,gray=new Uint8Array(n),inside=new Uint8Array(n),ink=new Uint8Array(n);
- for(let i=0;i<n;i++){const p=i*4;inside[i]=rgba[p+3]>=215?1:0;gray[i]=Math.round(.2126*rgba[p]+.7152*rgba[p+1]+.0722*rgba[p+2])}
- // Restrict detection to the segmented foreground, including a narrow silhouette.
- const detail=+$('detail').value,contrast=+$('contrast').value;
- const threshold=Math.max(65,Math.min(210,135+(detail-28)*.48-(contrast-45)*.35));
- for(let i=0;i<n;i++)if(inside[i]&&gray[i]<threshold)ink[i]=1;
- // Calculate distance from a white pixel; keep narrow ink strokes, not broad fills.
- const dist=new Uint16Array(n);for(let i=0;i<n;i++)dist[i]=ink[i]?30000:0;
- for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(ink[i])dist[i]=Math.min(dist[i],dist[i-1]+1,dist[i-w]+1,dist[i-w-1]+2)}
- for(let y=h-2;y>=1;y--)for(let x=w-2;x>=1;x--){const i=y*w+x;if(ink[i])dist[i]=Math.min(dist[i],dist[i+1]+1,dist[i+w]+1,dist[i+w+1]+2)}
- // Draw a smooth single contour along broad fills; preserve ink where strokes are narrow.
- const strokeMax=Math.max(2,Math.round(Math.min(w,h)*.0045)),lines=new Uint8Array(n);
- for(let i=0;i<n;i++)if(ink[i]&&dist[i]<=strokeMax)lines[i]=1;
- // Recover the outer silhouette directly from alpha, independent of black fills.
- if($('silhouette').checked)for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(inside[i]&&(!inside[i-1]||!inside[i+1]||!inside[i-w]||!inside[i+w]))lines[i]=1}
- const closed=new Uint8Array(lines);
- for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(!inside[i]||lines[i])continue;
-  if((lines[i-1]&&lines[i+1])||(lines[i-w]&&lines[i+w])||(lines[i-w-1]&&lines[i+w+1])||(lines[i-w+1]&&lines[i+w-1]))closed[i]=1;
- }
- // One pixel edges are antialiased by drawing at source resolution then downsampling.
- const out=document.createElement('canvas');out.width=w;out.height=h;const oc=out.getContext('2d'),data=oc.createImageData(w,h);
- for(let i=0;i<n;i++)if(closed[i])data.data[i*4+3]=255;
- oc.putImageData(data,0,0);
- canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(out,0,0);
- updateButtons();
+async function runAI(){
+ const blob=await removeBackground(file);
+ const image=new Image(),url2=URL.createObjectURL(blob);
+ try{await new Promise((ok,fail)=>{image.onload=ok;image.onerror=fail;image.src=url2});const rgba=prep(image);mask=new Uint8Array(W*H);for(let i=0;i<mask.length;i++)mask[i]=rgba[i*4+3]}finally{URL.revokeObjectURL(url2)}
 }
-$('burn').addEventListener('click',async()=>{
- if(!inputFile||busy)return;busy=true;updateButtons();
- try{await ensureBackgroundRemoved();burnMode=true;renderBurn();showTab('result');status('Woodburning mode: thin outlines extracted; large dark fills suppressed. Inspect carefully: some filled details may be simplified.')}
- catch(e){console.error(e);status('Could not remove background for woodburning mode.',true)}
- finally{busy=false;updateButtons()}
-});
-
-function renderArt(){
- if(!inputFile||!cutout||removedFor!==inputFile)return;
- vectorSVG='';vectorMode=false;maskMode=false;
- $('vector').textContent='✧ Clean Vector Outline (SVG)';
- const image=cutout,maxSide=2200,scale=Math.min(1.5,maxSide/Math.max(image.naturalWidth,image.naturalHeight));
- const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale)),n=w*h;
- const source=document.createElement('canvas');source.width=w;source.height=h;
- const t=source.getContext('2d',{willReadFrequently:true});
- t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';t.drawImage(image,0,0,w,h);
- const src=t.getImageData(0,0,w,h).data,gray=new Uint8Array(n),mask=new Uint8Array(n),ink=new Uint8Array(n);
- for(let i=0;i<n;i++){const p=i*4;gray[i]=Math.round(src[p]*.2126+src[p+1]*.7152+src[p+2]*.0722);mask[i]=src[p+3]>=180?1:0}
- const stride=w+1,integral=new Float64Array((w+1)*(h+1));
- for(let y=1;y<=h;y++){let sum=0;for(let x=1;x<=w;x++){sum+=gray[(y-1)*w+x-1];integral[y*stride+x]=integral[(y-1)*stride+x]+sum}}
- function localMean(x,y,r){const x0=Math.max(0,x-r),y0=Math.max(0,y-r),x1=Math.min(w,x+r+1),y1=Math.min(h,y+r+1);return(integral[y1*stride+x1]-integral[y0*stride+x1]-integral[y1*stride+x0]+integral[y0*stride+x0])/((x1-x0)*(y1-y0))}
- const detail=+$('detail').value,recovery=+$('recovery').value,contrast=+$('contrast').value;
- const cutoff=20+(50-detail)*.22+(contrast-45)*.12;
- for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(!mask[i])continue;if(localMean(x,y,10)-gray[i]>cutoff||gray[i]<70)ink[i]=1}
- // Estimate dark-region thickness. Unlike destructive fill removal, keep narrow edges of large fills.
- const distance=new Uint16Array(n);distance.fill(0);
- for(let i=0;i<n;i++)if(ink[i])distance[i]=32000;
- for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(ink[i])distance[i]=Math.min(distance[i],distance[i-1]+1,distance[i-w]+1,distance[i-w-1]+2,distance[i-w+1]+2)}
- for(let y=h-2;y>=1;y--)for(let x=w-2;x>=1;x--){const i=y*w+x;if(ink[i])distance[i]=Math.min(distance[i],distance[i+1]+1,distance[i+w]+1,distance[i+w+1]+2,distance[i+w-1]+2)}
- const maxThickness=Math.max(2,Math.round(Math.min(w,h)*.009)),lines=new Uint8Array(n);
- for(let i=0;i<n;i++)if(mask[i]&&ink[i]&&distance[i]<=maxThickness)lines[i]=1;
- if(recovery>0){
-  const sensitivity=Math.max(15,90-recovery*.6),additions=[];
-  for(let y=2;y<h-2;y++)for(let x=2;x<w-2;x++){
-   const i=y*w+x;if(!mask[i]||lines[i])continue;
-   const gx=-gray[i-w-1]+gray[i-w+1]-2*gray[i-1]+2*gray[i+1]-gray[i+w-1]+gray[i+w+1];
-   const gy=-gray[i-w-1]-2*gray[i-w]-gray[i-w+1]+gray[i+w-1]+2*gray[i+w]+gray[i+w+1];
-   if(Math.hypot(gx,gy)<sensitivity)continue;
-   let near=false;for(let dy=-2;dy<=2&&!near;dy++)for(let dx=-2;dx<=2;dx++)if(lines[i+dy*w+dx]){near=true;break}
-   if(near)additions.push(i);
-  }
-  for(const i of additions)lines[i]=1;
- }
- const repaired=new Uint8Array(lines);
- for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
-  const i=y*w+x;if(!mask[i]||lines[i])continue;
-  if((lines[i-1]&&lines[i+1])||(lines[i-w]&&lines[i+w])||(lines[i-w-1]&&lines[i+w+1])||(lines[i-w+1]&&lines[i+w-1]))repaired[i]=1;
- }
- const result=document.createElement('canvas');result.width=w;result.height=h;
- const rctx=result.getContext('2d',{willReadFrequently:true}),output=rctx.createImageData(w,h);
- for(let i=0;i<n;i++)if(repaired[i])output.data[i*4+3]=255;
- rctx.putImageData(output,0,0);
- const thickness=+$('thick').value;
- if(thickness>1){
-  const copy=document.createElement('canvas');copy.width=w;copy.height=h;copy.getContext('2d').drawImage(result,0,0);
-  const spread=Math.min(3,thickness-1);
-  for(let dy=-spread;dy<=spread;dy++)for(let dx=-spread;dx<=spread;dx++)if(dx*dx+dy*dy<=spread*spread)rctx.drawImage(copy,dx,dy);
- }
- canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(result,0,0);updateButtons();
+$('process').onclick=async()=>{if(!file||busy)return;busy=true;controls();status('Removing background first…');try{source=prep(original);if(mode==='ai')await runAI();else runArtworkMask();history=[];redo=[];started=true;extract();stage='outline';setStage('outline');switchTab('result');status('Ready. Inspect the result. If a part is missing, choose Restore and paint it back.');$('dimensions').textContent=W+' × '+H+' pixels · transparent PNG'}catch(e){console.error(e);status('Processing failed. Try Artwork mode, or an image with simpler background.',true)}finally{busy=false;controls()}};
+function extract(){
+ if(!mask)return;const n=W*H,ink=+$('ink').value,thick=+$('thick').value;
+ const black=new Uint8Array(n);
+ for(let i=0;i<n;i++){const p=i*4;if(mask[i]<85)continue;const lum=.2126*source[p]+.7152*source[p+1]+.0722*source[p+2];if(lum<ink)black[i]=1}
+ // When fills are disabled, keep contour pixels of broad fills rather than their full interiors.
+ if(!$('fills').checked){const old=black.slice();for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x;if(old[i]&&old[i-1]&&old[i+1]&&old[i-W]&&old[i+W])black[i]=0}}
+ // Connect a single missing pixel, never invent long lines.
+ const joined=black.slice();for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x;if(!black[i]&&mask[i]>85&&((black[i-1]&&black[i+1])||(black[i-W]&&black[i+W])))joined[i]=1}
+ const pixels=new Uint8ClampedArray(n*4);
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x;if(!joined[i])continue;for(let dy=0;dy<thick;dy++)for(let dx=0;dx<thick;dx++){const xx=x+dx,yy=y+dy;if(xx<W&&yy<H)pixels[(yy*W+xx)*4+3]=255}}
+ output=new ImageData(pixels,W,H);controls();
 }
-$('art').addEventListener('click',async()=>{
- if(!inputFile||busy)return;
- busy=true;updateButtons();
- try{
-  await ensureBackgroundRemoved();
-  artMode=true;maskMode=false;burnMode=false;renderArt();showTab('result');
-  status('Step 2 of 2 complete: background removed first, then clean artwork lines extracted from the subject. Try SVG tracing next.');
- }catch(e){console.error(e);status('Could not remove the background. No unmasked outline was generated.',true)}
- finally{busy=false;updateButtons()}
-});
-
-function render(){if(burnMode){renderBurn();return}if(maskMode&&cutout){canvas.width=cutout.naturalWidth;canvas.height=cutout.naturalHeight;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(cutout,0,0);return}if(artMode){renderArt();return}vectorSVG='';vectorMode=false;$('vector').textContent='✧ Clean Vector Outline (SVG)';updateButtons();
-if(!cutout)return;
-const max=2800,scale=Math.min(1.65,max/Math.max(cutout.naturalWidth,cutout.naturalHeight));
-const w=Math.max(1,Math.round(cutout.naturalWidth*scale)),h=Math.max(1,Math.round(cutout.naturalHeight*scale)),n=w*h;
-const outScale=Math.min(1,2300/Math.max(cutout.naturalWidth,cutout.naturalHeight));
-const outW=Math.max(1,Math.round(cutout.naturalWidth*outScale)),outH=Math.max(1,Math.round(cutout.naturalHeight*outScale));
-const source=document.createElement('canvas');source.width=w;source.height=h;
-const c=source.getContext('2d',{willReadFrequently:true});c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';c.drawImage(cutout,0,0,w,h);
-const rgba=c.getImageData(0,0,w,h).data;
-const lum=new Float32Array(n),alpha=new Uint8Array(n);
-for(let i=0;i<n;i++){const p=i*4;alpha[i]=rgba[p+3];lum[i]=.2126*rgba[p]+.7152*rgba[p+1]+.0722*rgba[p+2]}
-// A separable five-tap Gaussian removes single-pixel noise without blurring character features.
-const kernel=[1,4,6,4,1],tmp=new Float32Array(n),smooth=new Float32Array(n);
-for(let y=0;y<h;y++)for(let x=0;x<w;x++){let sum=0;for(let k=-2;k<=2;k++)sum+=lum[y*w+Math.max(0,Math.min(w-1,x+k))]*kernel[k+2];tmp[y*w+x]=sum/16}
-for(let y=0;y<h;y++)for(let x=0;x<w;x++){let sum=0;for(let k=-2;k<=2;k++)sum+=tmp[Math.max(0,Math.min(h-1,y+k))*w+x]*kernel[k+2];smooth[y*w+x]=sum/16}
-// Sobel gradient + non-maximum suppression produces single-pixel ridges.
-const mag=new Float32Array(n),direction=new Uint8Array(n);
-for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;
-if(alpha[i]<110)continue;
-const a=smooth[i-w-1],b=smooth[i-w],d=smooth[i-w+1],e=smooth[i-1],g=smooth[i+1],j=smooth[i+w-1],k=smooth[i+w],l=smooth[i+w+1];
-const gx=-a+d-2*e+2*g-j+l,gy=-a-2*b-d+j+2*k+l;
-mag[i]=Math.hypot(gx,gy);
-let ang=(Math.atan2(gy,gx)*180/Math.PI+180)%180;
-direction[i]=ang<22.5||ang>=157.5?0:ang<67.5?1:ang<112.5?2:3;
-}
-const detail=+$('detail').value,contrast=+$('contrast').value;
-const high=Math.max(22,145-detail*1.12)*(contrast/45),low=high*.46;
-const strong=new Uint8Array(n),weak=new Uint8Array(n),edge=new Uint8Array(n);
-for(let y=2;y<h-2;y++)for(let x=2;x<w-2;x++){const i=y*w+x;if(alpha[i]<125||mag[i]<low)continue;
-const offsets=direction[i]===0?[1,-1]:direction[i]===1?[w-1,-w+1]:direction[i]===2?[w,-w]:[w+1,-w-1];
-if(mag[i]<mag[i+offsets[0]]||mag[i]<mag[i+offsets[1]])continue;
-if(mag[i]>=high)strong[i]=1;else weak[i]=1;
-}
-// Link faint edge pixels only when connected to reliable high-contrast lines.
-const stack=[];for(let i=0;i<n;i++)if(strong[i]){edge[i]=1;stack.push(i)}
-while(stack.length){const i=stack.pop(),x=i%w,y=(i/w)|0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=x+dx,ny=y+dy;if(nx<1||ny<1||nx>=w-1||ny>=h-1)continue;const j=ny*w+nx;if(weak[j]&&!edge[j]){edge[j]=1;stack.push(j)}}}
-if($('silhouette').checked){for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(alpha[i]>=145&&(alpha[i-1]<145||alpha[i+1]<145||alpha[i-w]<145||alpha[i+w]<145))edge[i]=1}}
-// Bridge one-pixel fractures in curves, without expanding all the outlines.
-for(let pass=0;pass<2;pass++){
- const joins=[];
- for(let y=2;y<h-2;y++)for(let x=2;x<w-2;x++){
-  const i=y*w+x;if(edge[i]||alpha[i]<95)continue;
-  const L=edge[i-1],R=edge[i+1],U=edge[i-w],D=edge[i+w];
-  const UL=edge[i-w-1],UR=edge[i-w+1],DL=edge[i+w-1],DR=edge[i+w+1];
-  if((L&&R)||(U&&D)||(UL&&DR)||(UR&&DL)||(L&&D)||(L&&U)||(R&&D)||(R&&U))joins.push(i);
- }
- for(const i of joins)edge[i]=1;
-}
-// Remove isolated single-pixel sparks.
-const cleaned=new Uint8Array(edge);
-for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
- const i=y*w+x;if(!edge[i])continue;let count=0;
- for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy)count+=edge[i+dy*w+dx];
- if(count===0)cleaned[i]=0;
-}
-edge.set(cleaned);
-// Render in a larger offscreen bitmap and downsample with antialiasing.
-const thick=+$('thick').value,rad=thick-1,hi=document.createElement('canvas');hi.width=w;hi.height=h;
-const hiCtx=hi.getContext('2d',{willReadFrequently:true}),output=hiCtx.createImageData(w,h),pixels=output.data;
-for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(!edge[i])continue;
-for(let dy=-rad;dy<=rad;dy++)for(let dx=-rad;dx<=rad;dx++){if(dx*dx+dy*dy>rad*rad)continue;let nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;pixels[(ny*w+nx)*4+3]=255}
-}
-if(thick===1){const base=pixels.slice();for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x,p=i*4;if(base[p+3])continue;
-const sides=(base[(i-1)*4+3]>0?1:0)+(base[(i+1)*4+3]>0?1:0)+(base[(i-w)*4+3]>0?1:0)+(base[(i+w)*4+3]>0?1:0);
-if(sides>=2)pixels[p+3]=55;
-}}
-hiCtx.putImageData(output,0,0);
-canvas.width=outW;canvas.height=outH;
-ctx.clearRect(0,0,outW,outH);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(hi,0,0,outW,outH);
-}
-
-function makeVector(){
- if(artMode){
-  const result=traceCenterlines(canvas,{stroke:Math.max(.9,Number($('thick').value)*1.15),threshold:70,gap:5});
-  vectorSVG=result.svg;return result.count;
- }
- return traceRasterContours();
-}
-function traceRasterContours(){
-
-  // Trace the boundaries of each connected black region. This yields actual SVG geometry,
-  // not an embedded raster image. A small closing pass bridges pinholes in strokes.
-  const width=canvas.width,height=canvas.height;
-  const px=ctx.getImageData(0,0,width,height).data;
-  const mask=new Uint8Array(width*height);
-  for(let i=0;i<mask.length;i++)mask[i]=px[i*4+3]>=75?1:0;
-  const filled=new Uint8Array(mask);
-  for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
-    const i=y*width+x;
-    if(mask[i])continue;
-    if((mask[i-1]&&mask[i+1])||(mask[i-width]&&mask[i+width])||(mask[i-width-1]&&mask[i+width+1])||(mask[i-width+1]&&mask[i+width-1]))filled[i]=1;
-  }
-  // Generate oriented boundary edges for SVG even-odd filled contours.
-  const neighbors=(x,y)=>x>=0&&y>=0&&x<width&&y<height&&filled[y*width+x];
-  const segments=new Map();
-  const add=(ax,ay,bx,by)=>{
-    const k=ax+','+ay;
-    const arr=segments.get(k)||[];
-    arr.push([bx,by]);segments.set(k,arr);
-  };
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-    if(!filled[y*width+x])continue;
-    if(!neighbors(x,y-1))add(x,y,x+1,y);
-    if(!neighbors(x+1,y))add(x+1,y,x+1,y+1);
-    if(!neighbors(x,y+1))add(x+1,y+1,x,y+1);
-    if(!neighbors(x-1,y))add(x,y+1,x,y);
-  }
-  const paths=[];let count=0;
-  while(segments.size && count++<400000){
-    const first=segments.keys().next().value;
-    let start=first.split(',').map(Number),current=start.slice(),points=[start];
-    let steps=0,closed=false;
-    while(steps++<width*height*4){
-      const key=current.join(',');
-      const choices=segments.get(key);
-      if(!choices||!choices.length)break;
-      const next=choices.pop();
-      if(!choices.length)segments.delete(key);
-      if(next[0]===start[0]&&next[1]===start[1]){closed=true;break}
-      points.push(next);current=next;
-    }
-    if(!closed||points.length<5)continue;
-    // Remove tiny dust fragments and near-collinear pixel stair steps.
-    if(points.length<12)continue;
-    const step=Math.max(1,Math.floor(points.length/650));
-    const sampled=points.filter((_,i)=>i%step===0);
-    if(sampled.length<4)continue;
-    // Midpoint quadratic curves soften stair-stepped boundaries while preserving geometry.
-    const fmt=n=>Number(n.toFixed(2));
-    let path='M '+fmt((sampled[0][0]+sampled.at(-1)[0])/2)+' '+fmt((sampled[0][1]+sampled.at(-1)[1])/2);
-    for(let i=0;i<sampled.length;i++){
-      const a=sampled[i],b=sampled[(i+1)%sampled.length];
-      path+=' Q '+a[0]+' '+a[1]+' '+fmt((a[0]+b[0])/2)+' '+fmt((a[1]+b[1])/2);
-    }
-    paths.push(path+' Z');
-  }
-  const body=paths.join(' ');
-  vectorSVG='<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+height+'" viewBox="0 0 '+width+' '+height+'"><path fill="#000000" fill-rule="evenodd" d="'+body+'"/></svg>';
-  return paths.length;
-}
-
-function downloadFile(blob,name){
- const url=URL.createObjectURL(blob),a=document.createElement('a');
- a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
-}
-$('vector').addEventListener('click',()=>{
- if(!cutout)return;
- if(vectorMode){render();status('Raster outline restored.');return}
- try{
-  const paths=makeVector();
-  if(!paths){status('Could not trace lines. Increase detail or contrast, then retry.',true);return}
-  vectorMode=true;
-  $('vector').textContent='↶ Return to raster outline';
-  updateButtons();
-  const svgBlob=new Blob([vectorSVG],{type:'image/svg+xml'});
-  const url=URL.createObjectURL(svgBlob);
-  const preview=new Image();
-  preview.onload=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(preview,0,0,canvas.width,canvas.height);URL.revokeObjectURL(url)};
-  preview.onerror=()=>URL.revokeObjectURL(url);
-  preview.src=url;
-  status('Clean vector mode ready: '+paths+' smooth paths. Download the SVG or transparent PNG.');
- }catch(err){console.error(err);status('Vector tracing failed for this image. Try a smaller image.',true)}
-});
-$('svgDownload').addEventListener('click',()=>{
- if(!vectorSVG||!inputFile)return;
- downloadFile(new Blob([vectorSVG],{type:'image/svg+xml'}),inputFile.name.replace(/\.[^.]+$/,'')+'-smooth-outline.svg');
-});
-for(const id of ['detail','recovery','thick','contrast'])$(id).addEventListener('input',()=>{$(id+'Value').value=$(id).value;render()});$('silhouette').addEventListener('change',render);$('white').addEventListener('change',()=>{$('canvasWrap').classList.toggle('white',$('white').checked)});$('resultTab').addEventListener('click',()=>showTab('result'));$('originalTab').addEventListener('click',()=>showTab('original'));$('download').addEventListener('click',()=>{if(!cutout)return;canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(inputFile.name.replace(/\.[^.]+$/,'')||'image')+'-outline.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)},'image/png')});$('reset').addEventListener('click',()=>{inputFile=null;cutout=null;removedFor=null;vectorSVG='';vectorMode=false;artMode=false;maskMode=false;burnMode=false;$('file').value='';$('fileName').textContent='No image selected';$('original').removeAttribute('src');if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=null;status('Choose another image to get started.');updateButtons();showTab('result')});updateButtons();
+$('fills').onchange=()=>{if(mask){extract();show()}};
+function setStage(s){stage=s;$('maskTab').classList.toggle('active',s==='mask');$('outlineTab').classList.toggle('active',s==='outline');show()}
+$('maskTab').onclick=()=>setStage('mask');$('outlineTab').onclick=()=>setStage('outline');
+function setTool(t){tool=t;for(const id of ['inspect','restore','erase'])$(id+'Tool').classList.toggle('active',id===t);canvas.style.touchAction=t==='inspect'?'auto':'none';if(t!=='inspect')setStage('mask')}
+for(const id of ['inspect','restore','erase'])$(id+'Tool').onclick=()=>setTool(id);
+function show(){if(!file)return;if(tab==='original')return;if(!mask||!source)return;canvas.width=W;canvas.height=H;const d=ctx.createImageData(W,H);
+ if(stage==='outline'){if(!output)return;d.data.set(output.data)}
+ else for(let i=0;i<W*H;i++){const p=i*4;d.data[p]=source[p];d.data[p+1]=source[p+1];d.data[p+2]=source[p+2];d.data[p+3]=mask[i]}
+ ctx.putImageData(d,0,0);$('wrap').classList.toggle('white',$('white').checked)}
+$('white').onchange=show;
+function paint(e){if(!drawing||!mask)return;const r=canvas.getBoundingClientRect();const x=Math.floor((e.clientX-r.left)*W/r.width),y=Math.floor((e.clientY-r.top)*H/r.height);const radius=+$('brush').value,rr=radius*radius;for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){if(dx*dx+dy*dy>rr)continue;const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=W||yy>=H)continue;mask[yy*W+xx]=tool==='erase'?0:source[(yy*W+xx)*4+3]}show()}
+canvas.addEventListener('pointerdown',e=>{if(tool==='inspect'||tab==='original'||!mask)return;e.preventDefault();drawing=true;history.push(mask.slice());if(history.length>12)history.shift();redo=[];canvas.setPointerCapture(e.pointerId);paint(e);controls()});
+canvas.addEventListener('pointermove',e=>{if(drawing)paint(e)});
+function finish(){if(!drawing)return;drawing=false;extract();show();controls()}canvas.addEventListener('pointerup',finish);canvas.addEventListener('pointercancel',finish);
+$('undo').onclick=()=>{if(!history.length)return;redo.push(mask.slice());mask=history.pop();extract();show();controls()};
+$('redo').onclick=()=>{if(!redo.length)return;history.push(mask.slice());mask=redo.pop();extract();show();controls()};
+function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),30000)}
+$('png').onclick=()=>{if(!output)return;const c=document.createElement('canvas');c.width=W;c.height=H;c.getContext('2d').putImageData(output,0,0);c.toBlob(b=>{if(b)download(b,(file.name.replace(/\\.[^.]+$/,'')||'art')+'-woodburn.png')},'image/png')};
+$('svg').onclick=()=>{if(!output)return;try{const c=document.createElement('canvas');c.width=W;c.height=H;c.getContext('2d').putImageData(output,0,0);const traced=traceCenterlines(c,{stroke:1.2,gap:2});download(new Blob([traced.svg],{type:'image/svg+xml'}),(file.name.replace(/\\.[^.]+$/,'')||'art')+'-centerline.svg')}catch(e){console.error(e);status('SVG tracing failed; PNG is still available.',true)}};
+$('reset').onclick=()=>{file=null;original=null;source=null;mask=null;output=null;history=[];redo=[];started=false;$('file').value='';$('filename').textContent='No image selected';if(url)URL.revokeObjectURL(url);url=null;$('original').removeAttribute('src');$('empty').hidden=false;canvas.hidden=true;controls();status('Choose a new image.')};
+controls();
