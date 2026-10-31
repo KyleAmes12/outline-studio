@@ -31,71 +31,57 @@ $('cut').addEventListener('click',async()=>{
 
 $('maskPreview').addEventListener('click',()=>{if(!cutout)return;maskMode=!maskMode;$('maskPreview').textContent=maskMode?'Return to line preview':'View background removal result';render();showTab('result');status(maskMode?'Viewing the isolated subject BEFORE tracing. If details are missing here, the background-removal model removed them.':'Returned to outline preview.');});
 function renderArt(){
- if(!inputFile)return;
- const image=cutout;
- if(!image||!image.naturalWidth||removedFor!==inputFile)return;
- vectorSVG='';vectorMode=false;$('vector').textContent='✧ Clean Vector Outline (SVG)';
- const maxSide=2200, scale=Math.min(2,maxSide/Math.max(image.naturalWidth,image.naturalHeight));
- const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));
- const temp=document.createElement('canvas');temp.width=w;temp.height=h;
- const t=temp.getContext('2d',{willReadFrequently:true});t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';t.clearRect(0,0,w,h);t.drawImage(image,0,0,w,h);
- const src=t.getImageData(0,0,w,h).data,n=w*h,gray=new Uint8Array(n),alpha=new Uint8Array(n);
- for(let i=0;i<n;i++){const p=4*i;alpha[i]=src[p+3];gray[i]=Math.round(.2126*src[p]+.7152*src[p+1]+.0722*src[p+2])}
- const threshold=Math.min(220,Math.max(65,128+(+$('detail').value-28)*.75-(+$('contrast').value-45)*.4));
- const recovery=+$('recovery').value,bitmap=new Uint8Array(n);
- // All recovered pixels must remain inside the subject mask.
- for(let i=0;i<n;i++)if(alpha[i]>=185&&gray[i]<threshold)bitmap[i]=1;
+ if(!inputFile||!cutout||removedFor!==inputFile)return;
+ vectorSVG='';vectorMode=false;maskMode=false;
+ $('vector').textContent='✧ Clean Vector Outline (SVG)';
+ const image=cutout,maxSide=2200,scale=Math.min(1.5,maxSide/Math.max(image.naturalWidth,image.naturalHeight));
+ const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale)),n=w*h;
+ const source=document.createElement('canvas');source.width=w;source.height=h;
+ const t=source.getContext('2d',{willReadFrequently:true});
+ t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';t.drawImage(image,0,0,w,h);
+ const src=t.getImageData(0,0,w,h).data,gray=new Uint8Array(n),mask=new Uint8Array(n),ink=new Uint8Array(n);
+ for(let i=0;i<n;i++){const p=i*4;gray[i]=Math.round(src[p]*.2126+src[p+1]*.7152+src[p+2]*.0722);mask[i]=src[p+3]>=180?1:0}
+ const stride=w+1,integral=new Float64Array((w+1)*(h+1));
+ for(let y=1;y<=h;y++){let sum=0;for(let x=1;x<=w;x++){sum+=gray[(y-1)*w+x-1];integral[y*stride+x]=integral[(y-1)*stride+x]+sum}}
+ function localMean(x,y,r){const x0=Math.max(0,x-r),y0=Math.max(0,y-r),x1=Math.min(w,x+r+1),y1=Math.min(h,y+r+1);return(integral[y1*stride+x1]-integral[y0*stride+x1]-integral[y1*stride+x0]+integral[y0*stride+x0])/((x1-x0)*(y1-y0))}
+ const detail=+$('detail').value,recovery=+$('recovery').value,contrast=+$('contrast').value;
+ const cutoff=20+(50-detail)*.22+(contrast-45)*.12;
+ for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(!mask[i])continue;if(localMean(x,y,10)-gray[i]>cutoff||gray[i]<70)ink[i]=1}
+ // Estimate dark-region thickness. Unlike destructive fill removal, keep narrow edges of large fills.
+ const distance=new Uint16Array(n);distance.fill(0);
+ for(let i=0;i<n;i++)if(ink[i])distance[i]=32000;
+ for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(ink[i])distance[i]=Math.min(distance[i],distance[i-1]+1,distance[i-w]+1,distance[i-w-1]+2,distance[i-w+1]+2)}
+ for(let y=h-2;y>=1;y--)for(let x=w-2;x>=1;x--){const i=y*w+x;if(ink[i])distance[i]=Math.min(distance[i],distance[i+1]+1,distance[i+w]+1,distance[i+w+1]+2,distance[i+w-1]+2)}
+ const maxThickness=Math.max(2,Math.round(Math.min(w,h)*.009)),lines=new Uint8Array(n);
+ for(let i=0;i<n;i++)if(mask[i]&&ink[i]&&distance[i]<=maxThickness)lines[i]=1;
  if(recovery>0){
-  const low=Math.max(28,100-recovery*.65);
-  // Weak gradients are included only near established dark artwork.
+  const sensitivity=Math.max(15,90-recovery*.6),additions=[];
   for(let y=2;y<h-2;y++)for(let x=2;x<w-2;x++){
-   const i=y*w+x;if(bitmap[i]||alpha[i]<205)continue;
+   const i=y*w+x;if(!mask[i]||lines[i])continue;
    const gx=-gray[i-w-1]+gray[i-w+1]-2*gray[i-1]+2*gray[i+1]-gray[i+w-1]+gray[i+w+1];
    const gy=-gray[i-w-1]-2*gray[i-w]-gray[i-w+1]+gray[i+w-1]+2*gray[i+w]+gray[i+w+1];
-   if(gray[i]>Math.min(210,threshold+16)||Math.hypot(gx,gy)<low)continue;
-   let connected=false;
-   for(let dy=-1;dy<=1&&!connected;dy++)for(let dx=-1;dx<=1;dx++)if(bitmap[i+dy*w+dx]){connected=true;break}
-   if(connected)bitmap[i]=1;
+   if(Math.hypot(gx,gy)<sensitivity)continue;
+   let near=false;for(let dy=-2;dy<=2&&!near;dy++)for(let dx=-2;dx<=2;dx++)if(lines[i+dy*w+dx]){near=true;break}
+   if(near)additions.push(i);
   }
+  for(const i of additions)lines[i]=1;
  }
- // Join only isolated one-pixel gaps between established ink strokes.
- const joined=new Uint8Array(bitmap);
+ const repaired=new Uint8Array(lines);
  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
-  const i=y*w+x;if(bitmap[i]||src[i*4+3]<190)continue;
-  const l=bitmap[i-1],r=bitmap[i+1],u=bitmap[i-w],d=bitmap[i+w];
-  if((l&&r)||(u&&d))joined[i]=1;
+  const i=y*w+x;if(!mask[i]||lines[i])continue;
+  if((lines[i-1]&&lines[i+1])||(lines[i-w]&&lines[i+w])||(lines[i-w-1]&&lines[i+w+1])||(lines[i-w+1]&&lines[i+w-1]))repaired[i]=1;
  }
- // Remove disconnected dust fragments rather than losing entire facial or belly strokes.
- const seen=new Uint8Array(n),queue=new Int32Array(n),minArea=Math.max(3,Math.round(n/1600000*3));
- for(let i=0;i<n;i++){
-  if(!joined[i]||seen[i])continue;
-  let head=0,tail=1;queue[0]=i;seen[i]=1;
-  while(head<tail){
-   const k=queue[head++],x=k%w,y=(k/w)|0;
-   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-    if(!dx&&!dy)continue;
-    const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;
-    const j=yy*w+xx;if(joined[j]&&!seen[j]){seen[j]=1;queue[tail++]=j}
-   }
-  }
-  if(tail<minArea)for(let k=0;k<tail;k++)joined[queue[k]]=0;
- }
- const ink=document.createElement('canvas');ink.width=w;ink.height=h;
- const ic=ink.getContext('2d',{willReadFrequently:true}),out=ic.createImageData(w,h),dst=out.data;
- for(let i=0;i<n;i++)if(joined[i])dst[4*i+3]=255;
- ic.putImageData(out,0,0);
+ const result=document.createElement('canvas');result.width=w;result.height=h;
+ const rctx=result.getContext('2d',{willReadFrequently:true}),output=rctx.createImageData(w,h);
+ for(let i=0;i<n;i++)if(repaired[i])output.data[i*4+3]=255;
+ rctx.putImageData(output,0,0);
  const thickness=+$('thick').value;
- // Do not thicken default fine line mode. Small dilations only when requested.
  if(thickness>1){
-  const expanded=ic.createImageData(w,h),a=expanded.data,r=Math.min(3,thickness-1);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(joined[y*w+x])
-   for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
-    const xx=x+dx,yy=y+dy;if(xx>=0&&xx<w&&yy>=0&&yy<h&&dx*dx+dy*dy<=r*r)a[(yy*w+xx)*4+3]=255;
-   }
-  ic.putImageData(expanded,0,0);
+  const copy=document.createElement('canvas');copy.width=w;copy.height=h;copy.getContext('2d').drawImage(result,0,0);
+  const spread=Math.min(3,thickness-1);
+  for(let dy=-spread;dy<=spread;dy++)for(let dx=-spread;dx<=spread;dx++)if(dx*dx+dy*dy<=spread*spread)rctx.drawImage(copy,dx,dy);
  }
- canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(ink,0,0);
- updateButtons();
+ canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(result,0,0);updateButtons();
 }
 $('art').addEventListener('click',async()=>{
  if(!inputFile||busy)return;
