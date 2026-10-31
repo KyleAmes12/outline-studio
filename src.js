@@ -1,18 +1,80 @@
 import { removeBackground } from '@imgly/background-removal';
 import './style.css';
 const app=document.querySelector('#app');
-app.innerHTML=`<main class="shell"><header><div class="mark">✦</div><div><div class="eyebrow">CREATIVE TOOLS</div><h1>Outline Studio</h1><p>Turn a photo into a crisp, transparent black-line PNG.</p></div></header><div class="layout"><section class="panel"><div class="sectionTitle">01 / Upload a photo</div><label class="drop" id="drop"><input id="file" type="file" accept="image/*"><span class="uploadIcon">↥</span><b>Choose an image</b><small>Tap or drop a JPG, PNG, or WebP</small></label><div id="fileName" class="muted">No image selected</div><div class="actions"><button id="cut" class="primary" disabled>✦ Remove background & outline</button></div><div class="status" id="status" role="status" aria-live="polite">Images are processed on your device. The first background removal loads an AI model and may take a little longer.</div><hr><div class="sectionTitle">02 / Fine tune</div><label class="setting">Detail level <output id="detailValue">28</output><input id="detail" type="range" min="5" max="90" value="28"></label><label class="setting">Line thickness <output id="thickValue">1</output><input id="thick" type="range" min="1" max="5" value="1"></label><label class="setting">Edge contrast <output id="contrastValue">45</output><input id="contrast" type="range" min="10" max="130" value="45"></label><label class="check"><input id="silhouette" type="checkbox" checked>Include subject's outer silhouette</label><label class="check"><input id="white" type="checkbox">Preview on white instead of checkerboard</label><button id="download" class="secondary" disabled>↓ Download transparent PNG</button><button id="vector" class="secondary" disabled>✧ Clean Vector Outline (SVG)</button><button id="svgDownload" class="secondary" disabled>↓ Download smooth SVG</button><button id="reset" class="subtle" disabled>Start over</button></section><section class="panel previewPanel"><div class="sectionTitle">03 / Preview</div><div class="tabs"><button class="tab active" id="resultTab">Outline</button><button class="tab" id="originalTab">Original</button></div><div class="canvasWrap" id="canvasWrap"><div id="empty">Your outline will appear here.<span>Black lines · Transparent background</span></div><canvas id="canvas" hidden></canvas><img id="original" alt="Uploaded original" hidden></div><p class="tip">Tip: For laser engraving, start with thin lines and increase the detail level only if important features are missing. Busy photos may need manual cleanup.</p></section></div><footer>Preserves the source image's geometry. No generative redrawing. Made for creative work, tracing and LaserGRBL.</footer></main>`;
+app.innerHTML=`<main class="shell"><header><div class="mark">✦</div><div><div class="eyebrow">CREATIVE TOOLS</div><h1>Outline Studio</h1><p>Turn a photo into a crisp, transparent black-line PNG.</p></div></header><div class="layout"><section class="panel"><div class="sectionTitle">01 / Upload a photo</div><label class="drop" id="drop"><input id="file" type="file" accept="image/*"><span class="uploadIcon">↥</span><b>Choose an image</b><small>Tap or drop a JPG, PNG, or WebP</small></label><div id="fileName" class="muted">No image selected</div><div class="actions"><button id="cut" class="primary" disabled>✦ Remove background & outline</button><button id="art" class="secondary" disabled>✎ Clean Artwork (recommended for cartoons)</button></div><div class="status" id="status" role="status" aria-live="polite">Images are processed on your device. The first background removal loads an AI model and may take a little longer.</div><hr><div class="sectionTitle">02 / Fine tune</div><label class="setting">Detail level <output id="detailValue">28</output><input id="detail" type="range" min="5" max="90" value="28"></label><label class="setting">Line thickness <output id="thickValue">1</output><input id="thick" type="range" min="1" max="5" value="1"></label><label class="setting">Edge contrast <output id="contrastValue">45</output><input id="contrast" type="range" min="10" max="130" value="45"></label><label class="check"><input id="silhouette" type="checkbox" checked>Include subject's outer silhouette</label><label class="check"><input id="white" type="checkbox">Preview on white instead of checkerboard</label><button id="download" class="secondary" disabled>↓ Download transparent PNG</button><button id="vector" class="secondary" disabled>✧ Clean Vector Outline (SVG)</button><button id="svgDownload" class="secondary" disabled>↓ Download smooth SVG</button><button id="reset" class="subtle" disabled>Start over</button></section><section class="panel previewPanel"><div class="sectionTitle">03 / Preview</div><div class="tabs"><button class="tab active" id="resultTab">Outline</button><button class="tab" id="originalTab">Original</button></div><div class="canvasWrap" id="canvasWrap"><div id="empty">Your outline will appear here.<span>Black lines · Transparent background</span></div><canvas id="canvas" hidden></canvas><img id="original" alt="Uploaded original" hidden></div><p class="tip">Tip: For laser engraving, start with thin lines and increase the detail level only if important features are missing. Busy photos may need manual cleanup.</p></section></div><footer>Preserves the source image's geometry. No generative redrawing. Made for creative work, tracing and LaserGRBL.</footer></main>`;
 const $=id=>document.getElementById(id);
-let inputFile=null,cutout=null,viewing='result',busy=false,vectorMode=false,vectorSVG='';
+let inputFile=null,cutout=null,viewing='result',busy=false,vectorMode=false,vectorSVG='',artMode=false;
 const canvas=$('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
 function status(msg,error=false){$('status').textContent=msg;$('status').classList.toggle('error',error)}
-function updateButtons(){$('cut').disabled=!inputFile||busy;$('download').disabled=!cutout||busy;$('vector').disabled=!cutout||busy;$('svgDownload').disabled=!vectorSVG||busy;$('reset').disabled=!inputFile||busy}
+function updateButtons(){$('cut').disabled=!inputFile||busy;$('art').disabled=!inputFile||busy;$('download').disabled=!cutout||busy;$('vector').disabled=!cutout||busy;$('svgDownload').disabled=!vectorSVG||busy;$('reset').disabled=!inputFile||busy}
 function showTab(tab){viewing=tab;$('resultTab').classList.toggle('active',tab==='result');$('originalTab').classList.toggle('active',tab==='original');$('original').hidden=tab!=='original'||!inputFile;canvas.hidden=tab!=='result'||!cutout;$('empty').hidden=(tab==='original'&&!!inputFile)||(tab==='result'&&!!cutout)}
 let originalUrl=null;
-function loadImage(file){if(!file||!file.type.startsWith('image/'))return status('Please choose an image file.',true);if(file.size>25*1024*1024)return status('Please select an image smaller than 25 MB.',true);inputFile=file;cutout=null;if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=URL.createObjectURL(file);const im=new Image();im.onload=()=>{$('original').src=originalUrl;$('fileName').textContent=file.name;status('Ready! Tap “Remove background & outline”.');updateButtons();showTab('original')};im.onerror=()=>status('Could not open that image.',true);im.src=originalUrl}
+function loadImage(file){if(!file||!file.type.startsWith('image/'))return status('Please choose an image file.',true);if(file.size>25*1024*1024)return status('Please select an image smaller than 25 MB.',true);inputFile=file;cutout=null;artMode=false;vectorSVG='';if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=URL.createObjectURL(file);const im=new Image();im.onload=()=>{$('original').src=originalUrl;$('fileName').textContent=file.name;status('Ready! Tap “Remove background & outline”.');updateButtons();showTab('original')};im.onerror=()=>status('Could not open that image.',true);im.src=originalUrl}
 $('file').addEventListener('change',e=>loadImage(e.target.files[0]));const drop=$('drop');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});drop.addEventListener('dragleave',()=>drop.classList.remove('over'));drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');loadImage(e.dataTransfer.files[0])});
-$('cut').addEventListener('click',async()=>{if(!inputFile||busy)return;busy=true;updateButtons();status('Removing the background… The first run downloads the processing model (internet required).');try{const blob=await removeBackground(inputFile,{progress:(key,current,total)=>{if(total>0)status('Preparing background removal… '+Math.round(current/total*100)+'%')}});const url=URL.createObjectURL(blob);const im=new Image();await new Promise((resolve,reject)=>{im.onload=resolve;im.onerror=reject;im.src=url});cutout=im;render();showTab('result');status('Done! Adjust the sliders, then save your transparent PNG.');URL.revokeObjectURL(url)}catch(e){console.error(e);status('Background removal failed. Check your connection, then try again. Large mobile photos may exhaust device memory.',true)}finally{busy=false;updateButtons()}});
-function render(){vectorSVG='';vectorMode=false;$('vector').textContent='✧ Clean Vector Outline (SVG)';updateButtons();
+$('cut').addEventListener('click',async()=>{if(!inputFile||busy)return;busy=true;updateButtons();status('Removing the background… The first run downloads the processing model (internet required).');try{const blob=await removeBackground(inputFile,{progress:(key,current,total)=>{if(total>0)status('Preparing background removal… '+Math.round(current/total*100)+'%')}});const url=URL.createObjectURL(blob);const im=new Image();await new Promise((resolve,reject)=>{im.onload=resolve;im.onerror=reject;im.src=url});cutout=im;artMode=false;render();showTab('result');status('Done! Adjust the sliders, then save your transparent PNG.');URL.revokeObjectURL(url)}catch(e){console.error(e);status('Background removal failed. Check your connection, then try again. Large mobile photos may exhaust device memory.',true)}finally{busy=false;updateButtons()}});
+
+function renderArt(){
+ if(!inputFile)return;
+ const image=$('original');
+ if(!image.complete||!image.naturalWidth)return;
+ vectorSVG='';vectorMode=false;$('vector').textContent='✧ Clean Vector Outline (SVG)';
+ const maxSide=2200, scale=Math.min(2,maxSide/Math.max(image.naturalWidth,image.naturalHeight));
+ const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));
+ const temp=document.createElement('canvas');temp.width=w;temp.height=h;
+ const t=temp.getContext('2d',{willReadFrequently:true});t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';t.fillStyle='white';t.fillRect(0,0,w,h);t.drawImage(image,0,0,w,h);
+ const src=t.getImageData(0,0,w,h).data,n=w*h,gray=new Uint8Array(n);
+ for(let i=0;i<n;i++){const p=4*i;gray[i]=Math.round(.2126*src[p]+.7152*src[p+1]+.0722*src[p+2])}
+ // Dark-ink segmentation preserves ink interior instead of detecting two outlines around each stroke.
+ const threshold=Math.min(210,Math.max(70,130+(+$('detail').value-28)*.8-(+$('contrast').value-45)*.45));
+ const bitmap=new Uint8Array(n);
+ for(let i=0;i<n;i++)if(gray[i]<threshold)bitmap[i]=1;
+ // Join only isolated one-pixel gaps between established ink strokes.
+ const joined=new Uint8Array(bitmap);
+ for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+  const i=y*w+x;if(bitmap[i])continue;
+  const l=bitmap[i-1],r=bitmap[i+1],u=bitmap[i-w],d=bitmap[i+w];
+  if((l&&r)||(u&&d))joined[i]=1;
+ }
+ // Remove disconnected dust fragments rather than losing entire facial or belly strokes.
+ const seen=new Uint8Array(n),queue=new Int32Array(n),minArea=Math.max(3,Math.round(n/1600000*3));
+ for(let i=0;i<n;i++){
+  if(!joined[i]||seen[i])continue;
+  let head=0,tail=1;queue[0]=i;seen[i]=1;
+  while(head<tail){
+   const k=queue[head++],x=k%w,y=(k/w)|0;
+   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    if(!dx&&!dy)continue;
+    const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=w||yy>=h)continue;
+    const j=yy*w+xx;if(joined[j]&&!seen[j]){seen[j]=1;queue[tail++]=j}
+   }
+  }
+  if(tail<minArea)for(let k=0;k<tail;k++)joined[queue[k]]=0;
+ }
+ const ink=document.createElement('canvas');ink.width=w;ink.height=h;
+ const ic=ink.getContext('2d',{willReadFrequently:true}),out=ic.createImageData(w,h),dst=out.data;
+ for(let i=0;i<n;i++)if(joined[i])dst[4*i+3]=255;
+ ic.putImageData(out,0,0);
+ const thickness=+$('thick').value;
+ // Do not thicken default fine line mode. Small dilations only when requested.
+ if(thickness>1){
+  const expanded=ic.createImageData(w,h),a=expanded.data,r=Math.min(3,thickness-1);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(joined[y*w+x])
+   for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+    const xx=x+dx,yy=y+dy;if(xx>=0&&xx<w&&yy>=0&&yy<h&&dx*dx+dy*dy<=r*r)a[(yy*w+xx)*4+3]=255;
+   }
+  ic.putImageData(expanded,0,0);
+ }
+ canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(ink,0,0);
+ updateButtons();
+}
+$('art').addEventListener('click',()=>{
+ if(!inputFile)return;
+ artMode=true;renderArt();cutout=$('original');showTab('result');
+ status('Clean Artwork mode: original dark strokes retained, white background made transparent. Adjust Detail and Contrast for cleaner ink.');
+ updateButtons();
+});
+
+function render(){if(artMode){renderArt();return}vectorSVG='';vectorMode=false;$('vector').textContent='✧ Clean Vector Outline (SVG)';updateButtons();
 if(!cutout)return;
 const max=2800,scale=Math.min(1.65,max/Math.max(cutout.naturalWidth,cutout.naturalHeight));
 const w=Math.max(1,Math.round(cutout.naturalWidth*scale)),h=Math.max(1,Math.round(cutout.naturalHeight*scale)),n=w*h;
@@ -170,4 +232,4 @@ $('svgDownload').addEventListener('click',()=>{
  if(!vectorSVG||!inputFile)return;
  downloadFile(new Blob([vectorSVG],{type:'image/svg+xml'}),inputFile.name.replace(/\.[^.]+$/,'')+'-smooth-outline.svg');
 });
-for(const id of ['detail','thick','contrast'])$(id).addEventListener('input',()=>{$(id+'Value').value=$(id).value;render()});$('silhouette').addEventListener('change',render);$('white').addEventListener('change',()=>{$('canvasWrap').classList.toggle('white',$('white').checked)});$('resultTab').addEventListener('click',()=>showTab('result'));$('originalTab').addEventListener('click',()=>showTab('original'));$('download').addEventListener('click',()=>{if(!cutout)return;canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(inputFile.name.replace(/\.[^.]+$/,'')||'image')+'-outline.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)},'image/png')});$('reset').addEventListener('click',()=>{inputFile=null;cutout=null;vectorSVG='';vectorMode=false;$('file').value='';$('fileName').textContent='No image selected';$('original').removeAttribute('src');if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=null;status('Choose another image to get started.');updateButtons();showTab('result')});updateButtons();
+for(const id of ['detail','thick','contrast'])$(id).addEventListener('input',()=>{$(id+'Value').value=$(id).value;render()});$('silhouette').addEventListener('change',render);$('white').addEventListener('change',()=>{$('canvasWrap').classList.toggle('white',$('white').checked)});$('resultTab').addEventListener('click',()=>showTab('result'));$('originalTab').addEventListener('click',()=>showTab('original'));$('download').addEventListener('click',()=>{if(!cutout)return;canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(inputFile.name.replace(/\.[^.]+$/,'')||'image')+'-outline.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)},'image/png')});$('reset').addEventListener('click',()=>{inputFile=null;cutout=null;vectorSVG='';vectorMode=false;artMode=false;$('file').value='';$('fileName').textContent='No image selected';$('original').removeAttribute('src');if(originalUrl)URL.revokeObjectURL(originalUrl);originalUrl=null;status('Choose another image to get started.');updateButtons();showTab('result')});updateButtons();
